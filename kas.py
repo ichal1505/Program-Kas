@@ -2,6 +2,7 @@ import streamlit as st
 import datetime
 import json
 import os
+import secrets
 
 st.set_page_config(page_title="Program Kas", page_icon="💰", layout="centered")
 
@@ -86,6 +87,36 @@ BULAN_LIST = [
 ]
 
 FILE_DATA = "data_kas.json"
+FILE_TOKEN = "tokens.json"
+
+
+def muat_token():
+    """Membaca daftar token login yang masih aktif."""
+    if not os.path.exists(FILE_TOKEN):
+        return {}
+    with open(FILE_TOKEN, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def simpan_token(data_token):
+    with open(FILE_TOKEN, "w", encoding="utf-8") as f:
+        json.dump(data_token, f, ensure_ascii=False, indent=2)
+
+
+def buat_token_baru(username):
+    """Membuat token acak baru untuk satu username, lalu menyimpannya ke file."""
+    data_token = muat_token()
+    token_baru = secrets.token_hex(16)
+    data_token[token_baru] = username
+    simpan_token(data_token)
+    return token_baru
+
+
+def hapus_token(token):
+    data_token = muat_token()
+    if token in data_token:
+        del data_token[token]
+        simpan_token(data_token)
 
 
 def muat_data():
@@ -112,6 +143,15 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = ""
 
+# --- Cek apakah ada token login yang valid di URL (misal setelah refresh) ---
+if not st.session_state.logged_in:
+    token_di_url = st.query_params.get("token")
+    if token_di_url:
+        data_token = muat_token()
+        if token_di_url in data_token:
+            st.session_state.logged_in = True
+            st.session_state.username = data_token[token_di_url]
+
 # --- Halaman login ---
 if not st.session_state.logged_in:
     st.title("🔒 Login")
@@ -125,6 +165,12 @@ if not st.session_state.logged_in:
         if username_input in USERS and USERS[username_input] == password_input:
             st.session_state.logged_in = True
             st.session_state.username = username_input
+
+            # Buat token baru dan simpan di URL, supaya kalau halaman
+            # di-refresh, login tidak perlu diulang
+            token_baru = buat_token_baru(username_input)
+            st.query_params["token"] = token_baru
+
             st.rerun()
         else:
             st.error("Username atau password salah, coba lagi.")
@@ -302,6 +348,10 @@ with tab_laporan:
 # --- Tombol logout ---
 st.divider()
 if st.button("Logout", use_container_width=True):
+    token_di_url = st.query_params.get("token")
+    if token_di_url:
+        hapus_token(token_di_url)
+    st.query_params.clear()
     st.session_state.logged_in = False
     st.session_state.username = ""
     st.rerun()
