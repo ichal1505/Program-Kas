@@ -36,13 +36,48 @@ st.markdown("""
         font-weight: 700;
         color: #ff6b6b;
     }
+
+    /* --- Styling untuk laporan yang bisa dicetak --- */
+    .laporan-tabel {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1rem;
+    }
+    .laporan-tabel th, .laporan-tabel td {
+        border: 1px solid #444;
+        padding: 8px 10px;
+        text-align: left;
+    }
+    .laporan-tabel th {
+        background-color: rgba(255, 255, 255, 0.08);
+    }
+    .laporan-total-row td {
+        font-weight: 700;
+        border-top: 2px solid #888;
+    }
+
+    /* --- Saat mode print aktif, sembunyikan semua kecuali area laporan --- */
+    @media print {
+        header, div[data-testid="stHeader"], div[data-testid="stToolbar"],
+        div[data-testid="stSidebar"], .stTabs [data-baseweb="tab-list"],
+        div[data-testid="stForm"], div[data-testid="stButton"],
+        .kartu-item {
+            display: none !important;
+        }
+        .area-cetak, .area-cetak * {
+            display: block !important;
+        }
+        .laporan-tabel, .laporan-tabel * {
+            display: revert !important;
+        }
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # --- Daftar akun yang bisa login ---
 USERS = {
     "ichal": "150599",
-    "riska": "100198",
+    "riska": "100199",
 }
 
 BULAN_LIST = [
@@ -104,7 +139,7 @@ if "pengeluaran" not in st.session_state:
 st.markdown("## 💰 Program Kas")
 st.caption(f"Login sebagai **{st.session_state.username}**")
 
-tab_tambah, tab_riwayat = st.tabs(["➕ Tambah", "📋 Riwayat"])
+tab_tambah, tab_riwayat, tab_laporan = st.tabs(["➕ Tambah", "📋 Riwayat", "🖨️ Laporan"])
 
 # --- TAB TAMBAH ---
 with tab_tambah:
@@ -198,6 +233,78 @@ with tab_riwayat:
             st.session_state.pengeluaran = []
             simpan_data(st.session_state.pengeluaran)
             st.rerun()
+
+# --- TAB LAPORAN ---
+with tab_laporan:
+    if len(st.session_state.pengeluaran) == 0:
+        st.info("Belum ada pengeluaran yang dicatat.")
+    else:
+        tahun_tersedia_l = sorted(set(p["tahun"] for p in st.session_state.pengeluaran))
+
+        col_l1, col_l2 = st.columns(2)
+        with col_l1:
+            laporan_tahun = st.selectbox(
+                "Tahun", tahun_tersedia_l, index=len(tahun_tersedia_l) - 1, key="laporan_tahun"
+            )
+        with col_l2:
+            laporan_bulan = st.selectbox(
+                "Bulan", ["Semua Bulan"] + BULAN_LIST, key="laporan_bulan"
+            )
+
+        # Menyaring & mengurutkan data dari yang paling lama ke terbaru,
+        # supaya laporan enak dibaca urut waktu (beda dengan tab Riwayat)
+        data_laporan = [
+            p for p in st.session_state.pengeluaran
+            if p["tahun"] == laporan_tahun
+            and (laporan_bulan == "Semua Bulan" or p["bulan"] == laporan_bulan)
+        ]
+        data_laporan = sorted(data_laporan, key=lambda p: p["tanggal"])
+
+        if len(data_laporan) == 0:
+            st.info("Tidak ada data untuk periode ini.")
+        else:
+            total_laporan = sum(p["jumlah"] for p in data_laporan)
+            judul_periode = f"{laporan_bulan} {laporan_tahun}"
+
+            # Tombol cetak: memicu dialog print bawaan browser
+            if st.button("🖨️ Cetak / Simpan sebagai PDF", use_container_width=True):
+                st.components.v1.html(
+                    "<script>window.parent.print();</script>", height=0
+                )
+
+            # Menyusun baris tabel HTML
+            baris_html = ""
+            for p in data_laporan:
+                baris_html += f"""
+                <tr>
+                    <td>{p['tanggal'].strftime('%d %B %Y')}</td>
+                    <td>{p['keterangan']}</td>
+                    <td>Rp {p['jumlah']:,.0f}</td>
+                </tr>
+                """
+
+            st.markdown(f"""
+            <div class="area-cetak">
+                <h3>Laporan Pengeluaran - {judul_periode}</h3>
+                <p>Dicetak oleh: {st.session_state.username}</p>
+                <table class="laporan-tabel">
+                    <thead>
+                        <tr>
+                            <th>Tanggal</th>
+                            <th>Keterangan</th>
+                            <th>Jumlah</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {baris_html}
+                        <tr class="laporan-total-row">
+                            <td colspan="2">Total</td>
+                            <td>Rp {total_laporan:,.0f}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            """, unsafe_allow_html=True)
 
 # --- Tombol logout ---
 st.divider()
