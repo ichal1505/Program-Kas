@@ -76,8 +76,8 @@ st.markdown("""
 
 # --- Daftar akun yang bisa login ---
 USERS = {
-    "ichal": "150599",
-    "riska": "100199",
+    "ichal": "kasku123",
+    "admin": "admin123",
 }
 
 BULAN_LIST = [
@@ -272,39 +272,32 @@ with tab_laporan:
                     "<script>window.parent.print();</script>", height=0
                 )
 
-            # Menyusun baris tabel HTML
+            # Menyusun baris tabel HTML (tanpa indentasi berlebih,
+            # supaya tidak dianggap "kode teks" oleh markdown)
             baris_html = ""
             for p in data_laporan:
-                baris_html += f"""
-                <tr>
-                    <td>{p['tanggal'].strftime('%d %B %Y')}</td>
-                    <td>{p['keterangan']}</td>
-                    <td>Rp {p['jumlah']:,.0f}</td>
-                </tr>
-                """
+                baris_html += (
+                    "<tr>"
+                    f"<td>{p['tanggal'].strftime('%d %B %Y')}</td>"
+                    f"<td>{p['keterangan']}</td>"
+                    f"<td>Rp {p['jumlah']:,.0f}</td>"
+                    "</tr>"
+                )
 
-            st.markdown(f"""
-            <div class="area-cetak">
-                <h3>Laporan Pengeluaran - {judul_periode}</h3>
-                <p>Dicetak oleh: {st.session_state.username}</p>
-                <table class="laporan-tabel">
-                    <thead>
-                        <tr>
-                            <th>Tanggal</th>
-                            <th>Keterangan</th>
-                            <th>Jumlah</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {baris_html}
-                        <tr class="laporan-total-row">
-                            <td colspan="2">Total</td>
-                            <td>Rp {total_laporan:,.0f}</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-            """, unsafe_allow_html=True)
+            html_laporan = (
+                '<div class="area-cetak">'
+                f'<h3>Laporan Pengeluaran - {judul_periode}</h3>'
+                f'<p>Dicetak oleh: {st.session_state.username}</p>'
+                '<table class="laporan-tabel">'
+                '<thead><tr><th>Tanggal</th><th>Keterangan</th><th>Jumlah</th></tr></thead>'
+                f'<tbody>{baris_html}'
+                '<tr class="laporan-total-row">'
+                '<td colspan="2">Total</td>'
+                f'<td>Rp {total_laporan:,.0f}</td>'
+                '</tr>'
+                '</tbody></table></div>'
+            )
+            st.markdown(html_laporan, unsafe_allow_html=True)
 
 # --- Tombol logout ---
 st.divider()
