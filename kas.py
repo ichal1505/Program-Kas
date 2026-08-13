@@ -35,8 +35,9 @@ st.markdown("""
     .kartu-jumlah {
         font-size: 1.1rem;
         font-weight: 700;
-        color: #ff6b6b;
     }
+    .warna-pengeluaran { color: #ff6b6b; }
+    .warna-pemasukan { color: #51cf66; }
 
     /* --- Styling untuk laporan yang bisa dicetak --- */
     .laporan-tabel {
@@ -77,8 +78,8 @@ st.markdown("""
 
 # --- Daftar akun yang bisa login ---
 USERS = {
-    "ichal": "150599",
-    "riska": "100198",
+    "ichal": "kasku123",
+    "admin": "admin123",
 }
 
 BULAN_LIST = [
@@ -90,8 +91,31 @@ FILE_DATA = "data_kas.json"
 FILE_TOKEN = "tokens.json"
 
 
+def muat_data():
+    if not os.path.exists(FILE_DATA):
+        return []
+    with open(FILE_DATA, "r", encoding="utf-8") as f:
+        data_mentah = json.load(f)
+    for item in data_mentah:
+        item["tanggal"] = datetime.date.fromisoformat(item["tanggal"])
+        # Data lama (sebelum fitur pemasukan ditambahkan) belum punya
+        # field "jenis", jadi dianggap Pengeluaran secara default
+        if "jenis" not in item:
+            item["jenis"] = "Pengeluaran"
+    return data_mentah
+
+
+def simpan_data(data):
+    data_untuk_simpan = []
+    for item in data:
+        salinan = dict(item)
+        salinan["tanggal"] = item["tanggal"].isoformat()
+        data_untuk_simpan.append(salinan)
+    with open(FILE_DATA, "w", encoding="utf-8") as f:
+        json.dump(data_untuk_simpan, f, ensure_ascii=False, indent=2)
+
+
 def muat_token():
-    """Membaca daftar token login yang masih aktif."""
     if not os.path.exists(FILE_TOKEN):
         return {}
     with open(FILE_TOKEN, "r", encoding="utf-8") as f:
@@ -104,7 +128,6 @@ def simpan_token(data_token):
 
 
 def buat_token_baru(username):
-    """Membuat token acak baru untuk satu username, lalu menyimpannya ke file."""
     data_token = muat_token()
     token_baru = secrets.token_hex(16)
     data_token[token_baru] = username
@@ -117,26 +140,6 @@ def hapus_token(token):
     if token in data_token:
         del data_token[token]
         simpan_token(data_token)
-
-
-def muat_data():
-    if not os.path.exists(FILE_DATA):
-        return []
-    with open(FILE_DATA, "r", encoding="utf-8") as f:
-        data_mentah = json.load(f)
-    for item in data_mentah:
-        item["tanggal"] = datetime.date.fromisoformat(item["tanggal"])
-    return data_mentah
-
-
-def simpan_data(data):
-    data_untuk_simpan = []
-    for item in data:
-        salinan = dict(item)
-        salinan["tanggal"] = item["tanggal"].isoformat()
-        data_untuk_simpan.append(salinan)
-    with open(FILE_DATA, "w", encoding="utf-8") as f:
-        json.dump(data_untuk_simpan, f, ensure_ascii=False, indent=2)
 
 
 if "logged_in" not in st.session_state:
@@ -165,12 +168,8 @@ if not st.session_state.logged_in:
         if username_input in USERS and USERS[username_input] == password_input:
             st.session_state.logged_in = True
             st.session_state.username = username_input
-
-            # Buat token baru dan simpan di URL, supaya kalau halaman
-            # di-refresh, login tidak perlu diulang
             token_baru = buat_token_baru(username_input)
             st.query_params["token"] = token_baru
-
             st.rerun()
         else:
             st.error("Username atau password salah, coba lagi.")
@@ -179,8 +178,8 @@ if not st.session_state.logged_in:
 
 # --- Mulai dari sini, kode hanya jalan kalau sudah login ---
 
-if "pengeluaran" not in st.session_state:
-    st.session_state.pengeluaran = muat_data()
+if "transaksi" not in st.session_state:
+    st.session_state.transaksi = muat_data()
 
 st.markdown("## 💰 Program Kas")
 st.caption(f"Login sebagai **{st.session_state.username}**")
@@ -190,8 +189,9 @@ tab_tambah, tab_riwayat, tab_laporan = st.tabs(["➕ Tambah", "📋 Riwayat", "�
 # --- TAB TAMBAH ---
 with tab_tambah:
     with st.form("form_tambah", clear_on_submit=True):
-        keterangan = st.text_input("Nama barang / keterangan")
-        jumlah = st.number_input("Harga (Rp)", min_value=0, step=1000)
+        jenis = st.radio("Jenis Transaksi", ["Pengeluaran", "Pemasukan"], horizontal=True)
+        keterangan = st.text_input("Keterangan")
+        jumlah = st.number_input("Jumlah (Rp)", min_value=0, step=1000)
         tanggal = st.date_input(
             "Tanggal",
             value=datetime.date.today(),
@@ -203,39 +203,43 @@ with tab_tambah:
 
         if submit:
             if keterangan == "":
-                st.warning("Nama barang tidak boleh kosong.")
+                st.warning("Keterangan tidak boleh kosong.")
             else:
                 nama_bulan = BULAN_LIST[tanggal.month - 1]
-                st.session_state.pengeluaran.append({
+                st.session_state.transaksi.append({
+                    "jenis": jenis,
                     "keterangan": keterangan,
                     "jumlah": jumlah,
                     "tanggal": tanggal,
                     "bulan": nama_bulan,
                     "tahun": tanggal.year,
                 })
-                simpan_data(st.session_state.pengeluaran)
-                st.success(f"Tercatat: {keterangan} - Rp {jumlah:,.0f}")
+                simpan_data(st.session_state.transaksi)
+                st.success(f"Tercatat ({jenis}): {keterangan} - Rp {jumlah:,.0f}")
 
 # --- TAB RIWAYAT ---
 with tab_riwayat:
-    if len(st.session_state.pengeluaran) == 0:
-        st.info("Belum ada pengeluaran yang dicatat.")
+    if len(st.session_state.transaksi) == 0:
+        st.info("Belum ada transaksi yang dicatat.")
     else:
-        tahun_tersedia = sorted(set(p["tahun"] for p in st.session_state.pengeluaran))
+        tahun_tersedia = sorted(set(p["tahun"] for p in st.session_state.transaksi))
 
-        col_f1, col_f2 = st.columns(2)
+        col_f1, col_f2, col_f3 = st.columns(3)
         with col_f1:
             filter_tahun = st.selectbox("Tahun", tahun_tersedia, index=len(tahun_tersedia) - 1)
         with col_f2:
             filter_bulan = st.selectbox("Bulan", ["Semua Bulan"] + BULAN_LIST)
+        with col_f3:
+            filter_jenis = st.selectbox("Jenis", ["Semua", "Pemasukan", "Pengeluaran"])
 
         urutan = sorted(
-            enumerate(st.session_state.pengeluaran),
+            enumerate(st.session_state.transaksi),
             key=lambda pasangan: pasangan[1]["tanggal"],
             reverse=True,
         )
 
-        total = 0
+        total_pemasukan = 0
+        total_pengeluaran = 0
         ada_data = False
 
         for i, p in urutan:
@@ -243,49 +247,62 @@ with tab_riwayat:
             cocok_bulan = (filter_bulan == "Semua Bulan") or (p["bulan"] == filter_bulan)
             if not (cocok_tahun and cocok_bulan):
                 continue
-            total += p["jumlah"]
+            if p["jenis"] == "Pemasukan":
+                total_pemasukan += p["jumlah"]
+            else:
+                total_pengeluaran += p["jumlah"]
             ada_data = True
 
         if not ada_data:
-            st.info("Tidak ada pengeluaran untuk periode ini.")
+            st.info("Tidak ada transaksi untuk periode ini.")
         else:
-            st.metric(f"Total {filter_bulan} {filter_tahun}", f"Rp {total:,.0f}")
+            saldo = total_pemasukan - total_pengeluaran
+            col_m1, col_m2, col_m3 = st.columns(3)
+            col_m1.metric("Pemasukan", f"Rp {total_pemasukan:,.0f}")
+            col_m2.metric("Pengeluaran", f"Rp {total_pengeluaran:,.0f}")
+            col_m3.metric("Saldo", f"Rp {saldo:,.0f}")
             st.divider()
 
             for i, p in urutan:
                 cocok_tahun = p["tahun"] == filter_tahun
                 cocok_bulan = (filter_bulan == "Semua Bulan") or (p["bulan"] == filter_bulan)
-                if not (cocok_tahun and cocok_bulan):
+                cocok_jenis = (filter_jenis == "Semua") or (p["jenis"] == filter_jenis)
+                if not (cocok_tahun and cocok_bulan and cocok_jenis):
                     continue
+
+                kelas_warna = "warna-pemasukan" if p["jenis"] == "Pemasukan" else "warna-pengeluaran"
+                tanda = "+" if p["jenis"] == "Pemasukan" else "-"
 
                 col_isi, col_hapus = st.columns([5, 1])
                 with col_isi:
-                    st.markdown(f"""
-                    <div class="kartu-item">
-                        <div class="kartu-keterangan">{p['keterangan']}</div>
-                        <div class="kartu-tanggal">{p['tanggal'].strftime('%d %B %Y')}</div>
-                        <div class="kartu-jumlah">Rp {p['jumlah']:,.0f}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(
+                        '<div class="kartu-item">'
+                        f'<div class="kartu-keterangan">{p["keterangan"]} '
+                        f'<span style="font-size:0.75rem; opacity:0.6;">({p["jenis"]})</span></div>'
+                        f'<div class="kartu-tanggal">{p["tanggal"].strftime("%d %B %Y")}</div>'
+                        f'<div class="kartu-jumlah {kelas_warna}">{tanda} Rp {p["jumlah"]:,.0f}</div>'
+                        '</div>',
+                        unsafe_allow_html=True,
+                    )
                 with col_hapus:
                     if st.button("🗑️", key=f"hapus_{i}"):
-                        st.session_state.pengeluaran.pop(i)
-                        simpan_data(st.session_state.pengeluaran)
+                        st.session_state.transaksi.pop(i)
+                        simpan_data(st.session_state.transaksi)
                         st.rerun()
 
     st.divider()
-    if len(st.session_state.pengeluaran) > 0:
+    if len(st.session_state.transaksi) > 0:
         if st.button("Hapus Semua Data", use_container_width=True):
-            st.session_state.pengeluaran = []
-            simpan_data(st.session_state.pengeluaran)
+            st.session_state.transaksi = []
+            simpan_data(st.session_state.transaksi)
             st.rerun()
 
 # --- TAB LAPORAN ---
 with tab_laporan:
-    if len(st.session_state.pengeluaran) == 0:
-        st.info("Belum ada pengeluaran yang dicatat.")
+    if len(st.session_state.transaksi) == 0:
+        st.info("Belum ada transaksi yang dicatat.")
     else:
-        tahun_tersedia_l = sorted(set(p["tahun"] for p in st.session_state.pengeluaran))
+        tahun_tersedia_l = sorted(set(p["tahun"] for p in st.session_state.transaksi))
 
         col_l1, col_l2 = st.columns(2)
         with col_l1:
@@ -297,10 +314,8 @@ with tab_laporan:
                 "Bulan", ["Semua Bulan"] + BULAN_LIST, key="laporan_bulan"
             )
 
-        # Menyaring & mengurutkan data dari yang paling lama ke terbaru,
-        # supaya laporan enak dibaca urut waktu (beda dengan tab Riwayat)
         data_laporan = [
-            p for p in st.session_state.pengeluaran
+            p for p in st.session_state.transaksi
             if p["tahun"] == laporan_tahun
             and (laporan_bulan == "Semua Bulan" or p["bulan"] == laporan_bulan)
         ]
@@ -309,37 +324,46 @@ with tab_laporan:
         if len(data_laporan) == 0:
             st.info("Tidak ada data untuk periode ini.")
         else:
-            total_laporan = sum(p["jumlah"] for p in data_laporan)
+            total_pemasukan_l = sum(p["jumlah"] for p in data_laporan if p["jenis"] == "Pemasukan")
+            total_pengeluaran_l = sum(p["jumlah"] for p in data_laporan if p["jenis"] == "Pengeluaran")
+            saldo_l = total_pemasukan_l - total_pengeluaran_l
             judul_periode = f"{laporan_bulan} {laporan_tahun}"
 
-            # Tombol cetak: memicu dialog print bawaan browser
             if st.button("🖨️ Cetak / Simpan sebagai PDF", use_container_width=True):
                 st.components.v1.html(
                     "<script>window.parent.print();</script>", height=0
                 )
 
-            # Menyusun baris tabel HTML (tanpa indentasi berlebih,
-            # supaya tidak dianggap "kode teks" oleh markdown)
             baris_html = ""
             for p in data_laporan:
+                tanda = "+" if p["jenis"] == "Pemasukan" else "-"
                 baris_html += (
                     "<tr>"
                     f"<td>{p['tanggal'].strftime('%d %B %Y')}</td>"
                     f"<td>{p['keterangan']}</td>"
-                    f"<td>Rp {p['jumlah']:,.0f}</td>"
+                    f"<td>{p['jenis']}</td>"
+                    f"<td>{tanda} Rp {p['jumlah']:,.0f}</td>"
                     "</tr>"
                 )
 
             html_laporan = (
                 '<div class="area-cetak">'
-                f'<h3>Laporan Pengeluaran - {judul_periode}</h3>'
+                f'<h3>Laporan Keuangan - {judul_periode}</h3>'
                 f'<p>Dicetak oleh: {st.session_state.username}</p>'
                 '<table class="laporan-tabel">'
-                '<thead><tr><th>Tanggal</th><th>Keterangan</th><th>Jumlah</th></tr></thead>'
+                '<thead><tr><th>Tanggal</th><th>Keterangan</th><th>Jenis</th><th>Jumlah</th></tr></thead>'
                 f'<tbody>{baris_html}'
                 '<tr class="laporan-total-row">'
-                '<td colspan="2">Total</td>'
-                f'<td>Rp {total_laporan:,.0f}</td>'
+                '<td colspan="3">Total Pemasukan</td>'
+                f'<td>Rp {total_pemasukan_l:,.0f}</td>'
+                '</tr>'
+                '<tr class="laporan-total-row">'
+                '<td colspan="3">Total Pengeluaran</td>'
+                f'<td>Rp {total_pengeluaran_l:,.0f}</td>'
+                '</tr>'
+                '<tr class="laporan-total-row">'
+                '<td colspan="3">Saldo</td>'
+                f'<td>Rp {saldo_l:,.0f}</td>'
                 '</tr>'
                 '</tbody></table></div>'
             )
