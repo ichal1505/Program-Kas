@@ -78,8 +78,8 @@ st.markdown("""
 
 # --- Daftar akun yang bisa login ---
 USERS = {
-    "ichal": "kasku123",
-    "admin": "admin123",
+    "ichal": "150599",
+    "riska": "100198",
 }
 
 BULAN_LIST = [
